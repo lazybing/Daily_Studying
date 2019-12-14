@@ -29,3 +29,40 @@
      return ((0xFF << (n << 3)) & x) >> (n << 3);
  }
 ```
+
+3. logicalShift
+```
+/*
+ * LogicalShift - shift x to the right by n, using a logical shift
+ *      Can assume that 0 <= n <= 31
+ *      Examples: logicalShift(0x87654321, 4) = 0x08765432
+ *      Legal ops: ! ~ & ^ | + << >>
+ *      Max ops: 20
+ *      Rating: 3
+ */
+ int logicalShift(int x, int n) {
+     //make a mask
+     int z = 1 << 31;
+     int filter = ~((z >> n) << 1);
+     int result = (x >> n) & filter;
+     return result;
+ }
+ ```
+ 
+ 4. bitCount
+ 
+ ```
+ /*
+  * bitCount - returns count of number of 1's in word
+  *     Example : bitCount(5) = 2, bitCount(7) = 3
+  *     Legal ops: ! ~ & ^ | + << >>
+  *     Max ops: 40
+  *     Rating: 4
+  */
+  int bitCount(int x) {
+      
+  }
+ ```
+ 
+ 5. 
+ 
