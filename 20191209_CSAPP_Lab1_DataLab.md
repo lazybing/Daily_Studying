@@ -64,5 +64,30 @@
   }
  ```
  
- 5. 
+ 5. bang
+
+ ```
+ /*
+  * bang - Compute !x without using !
+  *     Example: bang(3) = 0, bang(0) = 1
+  *     Legal ops: ~ & ^ | + << >>
+  *     Max ops: 12
+  *     Rating: 4
+  */
+  int bang(int x) {
+      // when x is 0, temp1 is overflow, it's value is 0
+      int temp1 = ~x + 1;
+      // when x is 0, temp2 is 0, else its top most bit must be 1
+      int temp2 = x | temp1;
+      // Negation' mainly purpose is to switch the top most bit
+      // x = 0, temp3 = 0xffffffff, else temp3 = 0x0
+      int temp3 = ~temp2;
+
+      //Right shift of 31 bits
+      // x = 0, mask = 0xffffffff, else mask = 0
+      int mask = temp3 >> 31;
+
+      return mask & 1;
+  }
+ ```
  
