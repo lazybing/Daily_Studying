@@ -24,10 +24,11 @@ X264 源码中实现MB-Tree 的函数为 macroblock_tree，其中调用了如下
 3. macroblock_tree_finish():计算量化参数偏移系数。
 
 X264 中的调用关系如下：
-x264_slicetype_analyse
-  ->macrblock_tree
-    ->slicetype_frame_cost
-      ->slicetype_slice_cost
-        ->slicetype_mb_cost
-    ->macroblock_tree_propagate
-    ->macroblock_tree_finish
+x264_slicetype_analyse  
+  ->macrblock_tree  
+    ->slicetype_frame_cost  
+      ->slicetype_slice_cost  
+        ->slicetype_mb_cost  
+    ->macroblock_tree_propagate  
+    ->macroblock_tree_finish  
+
