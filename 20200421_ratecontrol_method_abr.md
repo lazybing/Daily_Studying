@@ -1,0 +1,1 @@
+X264 中关于 RateControl Method 的三中方法：X264_RC_CQP、X264_RC_CRF、X264_RC_ABR
