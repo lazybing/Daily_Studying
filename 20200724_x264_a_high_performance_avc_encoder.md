@@ -41,3 +41,7 @@ X264 的高性能主要归功于它的 Rate Control、Motion Estimation、MacroB
 ### 2.1.5 Constant Quantizer
 
 这也是一种 one pass 模式，其中 QP 简单的基于帧的类型是 I 、P 或 B 帧。
+
+## 2.2 Motion Estimation (运动估计)
+
+运动估计(Motion Estimation, ME)是 H264 编码器中最复杂最耗时的部分，它使用多个参考模式、多个参考帧。X264 提供了四种不同的整数像素运动估计，分别是
