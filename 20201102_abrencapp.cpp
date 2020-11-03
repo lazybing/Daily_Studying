@@ -396,8 +396,108 @@ namespace X265_NS {
 
                 x265_picture *srcPic  = m_parentEnc->m_parent->m_inputPicBuffer[srcId][scaledWritten % QDepth];
                 x265_picture *destPic = m_parentEnc->m_parent->m_inputPicBuffer[m_id][scaledWriteIdx];
+
+                //Enqueue this picture up with the current encoder so that it will asynchronously encode
+                if (!scalePic(destPic, srcPic))
+                    x265_log(NULL, X265_LOG_ERROR, "Unable to copy scaled input picture to input queue\n");
+                else
+                    m_parentEnc->m_parent->m_picWriteCnt[m_id].incr();
+                m_scaledWriteCnt.incr();
+                m_parentEnc->m_parent->m_picIdxReadCnt[srcId][scaledWriteIdx].incr();
+            }
+            if (m_threadTotal > 1)
+            {
+                written = m_parentEnc->m_parent->m_picWriteCnt[srcId].get();
+                int totalWrite = written / m_threadTotal;
+                if (written % m_threadTotal > m_threadId)
+                    totalWrite++;
+                if (totalWrite == m_scaledWriteCnt.get())
+                {
+                    m_parentEnc->m_parent->m_picWriteCnt[srcId].poke();
+                    m_parentEnc->m_parent->m_picWriteCnt[m_id].poke();
+                    break;
+                }
+            }
+            else
+            {
+                //Once end of video is reached and all frames are scaled, release wait on picwritecount
+                scaledWritten = m_parentEnc->m_parent->m_picWriteCnt[m_id].get();
+                written = m_parentEnc->m_parent->m_picWriteCnt[srcId].get();
+                if (written == scaledWritten)
+                {
+                    m_parentEnc->m_parent->m_picWriteCnt[srcId].poke();
+                    m_parentEnc->m_parent->m_picWriteCnt[m_id].poke();
+                    break;
+                }
             }
         }
+        m_threadActive = false;
+        destroy();
+    }
+
+    Reader::Reader(int id, PassEncoder *parentEnc)
+    {
+        m_parentEnc = parentEnc;
+        m_id = id;
+        m_input = parentEnc->m_input;
+    }
+
+    void Reader::threadMain()
+    {
+        THREAD_NAME("Reader", m_id);
+
+        int QDepth = m_parentEnc->m_parent->m_queueSize;
+        x265_picture *src = x265_picture_alloc();
+        x265_picture_init(m_parentEnc->m_param, src);
+
+        while(m_threadActive)
+        {
+            uint32_t written = m_parentEnc->m_parent->m_picWriteCnt[m_id].get();
+            uint32_t writeIdx = written % QDepth;
+            uint32_t read = m_parentEnc->m_parent->m_picIdxReadCnt[m_id][writeIdx].get();
+            uint32_t overWritePicBuffer = written / QDepth;
+
+            if (m_parentEnc->m_cliopt.framesToBeEncoded && written >= m_parentEnc->m_cliopt.framesToBeEncoded)
+                break;
+
+            while (overWritePicBuffer && read < overWritePicBuffer)
+            {
+                read = m_parentEnc->m_parent->m_picIdxReadCnt[m_id][writeIdx].waitForChange(read);
+            }
+
+            x265_picture *dest = m_parentEnc->m_parent->m_inputPicBuffer[m_id][writeIdx];
+            if (m_input->readPicture(*src))
+            {
+                dest->poc       = src->poc;
+                dest->pts       = src->pts;
+                dest->userSEI   = src->userSEI;
+                dest->bitDepth  = src->bitDepth;
+                dest->framesize = src->framesize;
+                dest->height    = src->height;
+                dest->width     = src->width;
+                dest->colorSpace= src->colorSpace;
+                dest->rpu.payload   = src->rpu.payload;
+                dest->picStruct     = src->picStruct;
+                dest->stride[0]     = src->stride[0];
+                dest->stride[1]     = src->stride[1];
+                dest->stride[2]     = src->stride[2];
+
+                if (!dest->planes[0])
+                    dest->planes[0] = X265_MALLOC(char, dest->framesize);
+
+                memcpy(dest->planes[0], src->planes[0], src->framesize * sizeof(char));
+                dest->planes[1] = (char *)dest->planes[0] + src->stride[0] * src->height;
+                dest->planes[2] = (char *)dest->planes[1] + src->stride[1] * (src->height >> x265_cli_csps[src->colorSpace].height[1]);
+                m_parentEnc->m_parent->m_picWriteCnt[m_id].incr();
+            }
+            else
+            {
+                m_threadActive = false;
+                m_parentEnc->m_inputOver = true;
+                m_parentEnc->m_parent->m_picWriteCnt[m_id].poke();
+            }
+        }
+        x265_picture_free(src);
     }
 }
 
