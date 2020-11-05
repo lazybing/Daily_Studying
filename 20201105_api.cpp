@@ -338,5 +338,73 @@ void x265_encoder_get_stats(x265_encoder *enc, x265_stats *outputStats, uint32_t
         encoder->fetchStats(outputStats, statsSizeBytes);
     }
 }
+
+void x265_encoder_log(x265_encoder *enc, int argc, char **argv)
+{
+    if (enc)
+    {
+        Encoder *encoder = static_cast<Encoder*>(enc);
+        x265_stats stats;
+        encoder->fetchStats(&stats, sizeof(stats));
+        int padx = encoder->m_sps.conformanceWindow.rightOffset;
+        int pady = encoder->m_sps.conformanceWindow.bottomOffset;
+        x265_csvlog_encode(encoder->m_param, &stats, padx, pady, argc, argv);
+    }
+}
+
+void x265_encoder_close(x265_encoder *enc)
+{
+    if (enc)
+    {
+        Encoder *encoder = static_cast<Encoder*>(enc);
+        encoder->stopJobs();
+        encoder->printSummary();
+        encoder->destroy();
+        delete encoder;
+    }
+}
+
+int x265_encoder_intra_refresh(x265_encoder *enc)
+{
+    if (!enc)
+        return -1;
+
+    Encoder *encoder = static_cast<Encoder*>(enc);
+    encoder->m_bQueuedIntraRefresh = 1;
+    return 0;
+}
+
+int x265_encoder_ctu_info(x265_encoder *enc, int poc, x265_ctu_info_t **ctu)
+{
+    if (!ctu || !enc)
+        return -1;
+    Encoder *encoder = static_cast<Encoder*>(enc);
+    encoder->copyCutInfo(ctu, poc);
+    return 0;
+}
+
+int x265_get_slicetype_poc_and_scenecut(x265_encoder *enc, int *slicetype, int *poc, int *sceneCut)
+{
+    if (!enc)
+        return -1;
+    Encoder *encoder = static_cast<Encoder *>(enc);
+    if (!encoder->copySlicetypePocAndSceneCut(slicetype, poc, sceneCut))
+        return 0;
+    return -1;
+}
+
+int x265_get_ref_frame_list(x265_encoder *enc, x265_picyuv **l0, x265_pivyuv **l1, int sliceType, int poc, int *pocL0, int *pocL1)
+{
+    if (!enc)
+        return -1;
+    Encoder *encoder = static_cast<Encoder *>(enc);
+    return encoder->getRefFrameList((PicYuv**)l0, (PicYuv **)l1, slicetype, poc, pocL0, pocL1);
+}
+
+int x265_set_analysis_data(x265_encoder *enc, x265_analysis_data *analysis_data, int poc, uint32_t cuBytes)
+{
+    
+}
+
 }
 
