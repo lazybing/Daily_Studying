@@ -147,5 +147,196 @@ fail:
     PARAM_NS::x265_param_free(zoneParam);
     return NULL;
 }
+
+int x265_encoder_headers(x265_encoder *enc, x265_nal **pp_nal, uint32_t *pi_nal)
+{
+    if (pp_nal && enc)
+    {
+        Encoder *encoder = static_cast<Encoder *>(enc);
+        Entropy sbacCoder;
+        Bitstream bs;
+        if (encoder->m_param->rc.bStatRead && encoder->m_param->bMultiPassOptRPS)
+        {
+            if (!encoder->computeSPSRPSIndex())
+            {
+                encoder->m_aborted = true;
+                return -1;
+            }
+        }
+        encoder->getStreamHeaders(encoder->m_nalList, sbacCoder, bs);
+        *pp_nal = &encoder->m_nalList.m_nal[0];
+        if (pi_nal) *pi_nal = encoder->m_nalList.m_numNal;
+        return encoder->m_nalList.m_occupancy;
+    }
+
+    if (enc)
+    {
+        Encoder *encoder = static_cast<Encoder *>(enc);
+        encoder->m_aborted = true;
+    }
+    return -1;
+}
+
+
+void x265_encoder_parameters(x265_encoder *enc, x265_param *out)
+{
+    if (enc && out)
+    {
+        Encoder *encoder = static_cast<Encoder *>(enc);
+        x265_copy_params(out, encoder->m_param);
+    }
+}
+
+int x265_encoder_reconfig(x265_encoder *enc, x265_param *param_in)
+{
+    if (!enc || !param_in)
+        return -1;
+    x265_param save;
+    Encoder *encoder = static_cast<Encoder *>(enc);
+    if (encoder->m_param->csvfn == NULL && param_in->csvfpt != NULL)
+        encoder->m_param->csvfpt = param_in->csvfpt;
+    if (encoder->m_latestParam->forceFlush != param_in->forceFlush)
+        return encoder->reconfigureParam(encoder->m_latestParam, param_in);
+    bool isReconfigureRc = encoder->isReconfigureRc(encoder->m_latestParam, param_in);
+    if ((encoder->m_reconfigure && !isReconfigureRc) || (encoder->m_reconfigureRc && isReconfigureRc))
+        return 1;
+    if (encoder->m_latestParam->rc.zoneCount || encoder->m_latestParam->rc.zonefileCount)
+    {
+        int zoneCount = encoder->m_latestParam->rc.zonefileCount ? encoder->m_latestParam->rc.zonefileCount : encoder->m_latestParam->rc.zoneCount;
+        save.rc.zones = x265_zone_alloc(zoneCount, !!encoder->m_latestParam->rc.zonefileCount);
+    }
+    x265_copy_params(&save, encoder->m_latestParam);
+    int ret = encoder->reconfigureParam(encoder->m_latestParam, param_in);
+    if (ret)
+    {
+        //reconfigure failed, recover saved param set
+        x265_copy_params(encoder-.m_latestParam, &save);
+        return -1;
+    }
+    else
+    {
+        encoder->configure(encoder->m_latestParam);
+        if (encoder->m_latestParam->scalingLists && encoder->m_latestParam->scalingLists != encoder->m_param->scalingLists)
+        {
+            if (encoder->m_param->bRepeatHeaders)
+            {
+                if (encoder->m_scalingList.parseScalingList(encoder->m_latestParam->scalingLists))
+                {
+                    x265_copy_params(encoder->m_latestParam, &save);
+                    return -1;
+                }
+                encoder->m_scalingList.setupQuantMatrices(encoder->m_param->internalCsp);
+            }
+            else
+            {
+                x265_log(encoder->m_param, X265_LOG_ERROR, "Repeat headers is turned OFF, cannot reconfigure scalinglists\n");
+                x265_copy_params(encoder->m_latestParam, &save);
+                return -1;
+            }
+        }
+        if (!isReconfigureRc)
+            encoder->m_reconfigure = true;
+        else if (encoder->m_reconfigureRc)
+        {
+            VPS saveVPS;
+            memcpy(&saveVPS.ptl, &encoder->m_vps.ptl, sizeof(saveVPS.ptl));
+            determineLevel(*encoder->m_latestParam, encoder->m_vps);
+            if (saveVPS.ptl.profileIdc != encoder->m_vps.ptl.profileIdc || saveVPS.ptl.levelIdc != encoder->m_vps.ptl.levelIdc
+                || saveVPS.ptl.tierFlag != encoder->m_vps.ptl.tierFlag)
+            {
+                x265_copy_params(encoder->m_latestParam, &save);
+                memcpy(&encoder->m_vps.ptl, &saveVPS.ptl, sizeof(saveVPS.ptl));
+                encoder->m_reconfigureRc = false;
+            }
+        }
+        encoder->printReconfigureParams();
+    }
+    //zones support modifying num of Refs.
+    //Requires determinig level at each zone start
+    if (encoder->m_param->rc.zonefileCount)
+        determineLevel(*encoder->m_latestParam, encoder->m_vps);
+    return ret;
+}
+
+int x265_encoder_reconfig_zone(x265_encoder* enc, x265_zone *zone_in)
+{
+    if (!enc || !zone_in)
+        return;
+
+    Encoder *encoder = static_cast<Encoder *>(enc);
+    int read    = encoder->zoneReadCount[encoder->m_zoneIndeencoder->m_zoneIndex].get();
+    int write   = encoder->zoneWriteCount[encoder->m_zoneIndeencoder->m_zoneIndex].get();
+
+    x265_zone *zone         = &(encoder->m_param->rc).zones[encoder->m_zoneIndex];
+    x265_param *zoneParam   = zone->zoneParam;
+
+    if (write && (read < write))
+    {
+        read = encoder->zoneReadCount[encoder->m_zoneIndex].waitForChange(read);
+    }
+
+    zone->startFrame = zone_in->startframe;
+    zoneParam->rc.bitrate = zone_in->zoneParam->rc.bitrate;
+    zoneParam->rc.vbvMaxBitrate = zone_in->zoneParam->rc.vbvmaxBitrate;
+    mempcy(zone->relativeComplexity, zone_in->relativeComplexity, sizeof(double) * encoder->m_param->reconfigWindowSize);
+
+    encoder->zoneWriteCount[encoder->m_zoneIndex].incr();
+    encoder->m_zoneIndex++;
+    encoder->m_zoneIndex %= encoder->m_param->rc.zonefileCount;
+
+    return 0;
+}
+
+int x265_encoder_encode(x265_encoder *enc, x265_nal **pp_nal, uint32_t *pi_nal, x265_picture *pin_in, x265_picture *pic_out)
+{
+    if (!enc)
+        return -1;
+
+    Encoder *encoder = static_cast<Encoder*>(enc);
+    int numEncoded;
+
+    //While flushing, we cannot return 0 until the entir stream if flushed
+    do {
+        numEncoded = encoder->encode(pic_in, pic_out);
+    }
+    while((numEncoded == 0 && !pic_in && encoder->m_numDelayedPic && !encoder->m_latestParam->forceFlush) && !encoder->m_externalFlush);
+    if (numEncoded)
+        encoder->m_externalFlush = false;
+
+    //do not allow reuse of these buffers for more than one picture.
+    //The encoder now owns these analysisData buffers.
+    if (pic_in)
+    {
+        pic_in->analysisData.wt             = NULL;
+        pic_in->analysisData.intraData      = NULL;
+        pic_in->analysisData.interData      = NULL;
+        pic_in->analysisData.distortionData = NULL;
+    }
+
+    if (pp_nal && numEncoded > 0 && encoder->m_outputCount >= encoder->m_latestParam->chunkStart)
+    {
+        *pp_nal = &encoder->m_nalList.m_nal[0];
+        if (pi_nal) *pi_nal = encoder->m_nalList.m_numNal;
+    }
+    else if (pi_nal)
+        *pi_nal = 0;
+
+    if (numEncoded && encoder->m_param->csvLogLevel && encoder->m_outputCount >= encoder->m_latestParam->chunkStart)
+        x265_csvlog_frame(encoder->m_param, pic_out);
+
+    if (numEncoded < 0)
+        encoder->m_aborted = true;
+
+    return numEncoded;
+}
+
+void x265_encoder_get_stats(x265_encoder *enc, x265_stats *outputStats, uint32_t statsSizeBytes)
+{
+    if (enc && outputStats)
+    {
+        Encoder *encoder = static_cast<Encoder*>(enc);
+        encoder->fetchStats(outputStats, statsSizeBytes);
+    }
+}
 }
 
