@@ -216,7 +216,28 @@ bool RateControl::init(const SPS& sps)
         int vbvBufferSize = m_param->rc.vbvBufferSize * 1000;
         int vbvMaxBitrate = m_param->rc.vbvMaxBitrate * 1000;
 
+        if (m_param->bEmitHRDSEI && !m_param->decoderVbvMaxRate)
+        {
+            const HRDInfo *hrd = &sps.vuiParameters.hrdParameters;
+            vbvBufferSize = hrd->cpbSizeValue << (hrd->cpbSizeScale + CPB_SHIFT);
+            vbvMaxBitrate = hrd->bitRateValue << (hrd->bitRateScale + BR_SHIFT);
+        }
+        m_bufferRate = vbvMaxBitrate / m_fps;
+        m_vbvMaxRate = vbvMaxBitrate;
+        m_bufferSize = vbvBufferSize;
+        m_singleFrameVbv = m_bufferRate * 1.1 > m_bufferSize;
 
+        if (m_param->rc.vbvBufferInit > 1.)
+            m_param->rc.vbvBufferInit = x265_clip3(0.0, 1.0, m_param->rc.vbvBufferInit / m_param->rc.vbvBufferSize);
+        if (m_param->vbvBufferEnd > 1.)
+            m_param->vbvBufferEnd = x265_clip3(0.0, 1.0, m_param->vbvBufferEnd / m_param->rc.vbvBufferSize);
+        if (m_param->vbvEndFrameAdjust > 1.)
+            m_param->vbvEndFrameAdjust = x265_clip3(0.0, 1.0, m_param->vbvEndFrameAdjust);
+        m_param->rc.vbvBufferInit = x265_clip3(0.0, 1.0, X265_MAX(m_param->rc.vbvBufferInit, m_bufferRate / m_bufferSize));
+        m_bufferFillFinal = m_bufferSize * m_param->rc.vbvBufferInit;
+        m_bufferFillActual = m_bufferFillFinal;
+        m_bufferExcess = 0;
+        m_initVbv = true;
     }
 }
 
