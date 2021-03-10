@@ -24,6 +24,79 @@ If the '-qpfile' is not specified then the initial QP and frame type are specifi
 
 In this note we consider CRF and single pass ABR rate control modes(without VBV).
 
+## 1.1 Selected x265 parameters
+--no-amp : disable assymetric partitions (e.g. 32x8)
+
+--no-rect : disable rectangle partitions Nx2N and 2NxN
+
+--no-tskip : disable transform skip mode (if video content is not animation or screen content it's worth to disable this mode)
+
+-b  : maximal number of B-frames
+
+--b-adapt : adaptive B-frame scheduling, 0 – disabled.
+
+-s : maximal CU-size
+
+--tu-intra-depth : maximal depth of transform tree rooted at intra-CU
+
+--tu-inter-depth : maximal depth of transform tree rooted at inter-CU
+
+--rd  : R-D decision level
+
+--subme : amount of subpel refinement to perform (0:least .. 7:most)
+
+--max-merge : maximum number of merge candidates
+
+--me : motion search method dia (0), hex (1), …
+
+--no-signhide : disable hiding of sign bits
+
+--no-lft  : disable deblocking (in case of significant motion the deblocking can be disabled)
+
+ 
+
+## 1.2  Presets
+ultrafast:  -s 32 --b-adapt 0 -b 4 --tu-inter-depth=1 --tu-intra-depth=1 --rd 0 --subme=0 --max-merge=1  --me=0 --no-amp --no-rect --no-tskip --early-skip  --no-lft   --no-sao --no-signhide --no-weightp
+
+superfast: -s 32 --b-adapt 0 -b 4 --tu-inter-depth=1 --tu-intra-depth=1 --rd 0 --subme=1 --max-merge=1   --me=1 --no-amp --no-rect --no-tskip --early-skip --no-signhide --no-weightp
+
+veryfast: --b-adapt 0 -b 4 --tu-inter-depth=1 --tu-intra-depth=1 --rd 0 --subme=1 --me=1 --max-merge=2   --no-amp --no-rect --no-tskip --early-skip
+
+faster: --b-adapt 0 -b 4 --tu-inter-depth=1 --tu-intra-depth=1 --rd 0 --subme=1 --me=1 --max-merge=2      --no-amp --no-rect --no-tskip --early-skip
+
+fast: --tu-inter-depth=1 --tu-intra-depth=1 --rd 0 --subme=1 --me=1 --max-merge=2 --no-amp --no-rect     --no-tskip
+
+medium: --tu-inter-depth=1 --tu-intra-depth=1 --rd 2 --max-merge=3 --no-amp --no-rect --no-tskip
+
+slow: --b-adapt 2 -b 4 --tu-inter-depth=1 --tu-intra-depth=1 --rd 2 --max-merge=3 --no-tskip
+
+slower: --b-adapt 2 --rc-lookahead 20 -b 5 --tu-inter-depth=2 --tu-intra-depth=2 --rd 2 --max-merge=4  --no-tskip --ref 3
+
+veryslow: --b-adapt 2 --rc-lookahead 30 -b 9 --max-merge=5 --ref 5
+
+placebo: --b-adapt 2 -b 16 --max-merge=5 --ref 16 --merange 124 --rc-lookahead 60
+
+## 1.3 x265 Parallelism
+x265 supports two paralleling schemas:frame-level and WPP(or mb-level in my jargon).It's worth mentioning
+that applying parallel coding might deteriorate coding efficiency(reported that WPP deteriorates the coding efficiency by 1%).
+Tiling is not supported by x265.
+
+### 1.3.1 Frame-Level Parallelism
+First thread starts the k-th frame, the second thread waits until a several mb-rows of the k-th frame have been completed.
+Then the second thread commences, search area is already available.
+
+To enable frame-level parallelism you need disable WPP(use '--no-wpp') and apply '--frame-threads'(no co-existence of WPP and frame-threads)
+by setting '--frame-threads N', where N is the number of threads.
+
+Example(2 concurrently encoed frames): ./x265 --input a.yuv --input-res 3840x1744 --fps 24 --b-adapt 0 -b 0 --ref 1 --frame-threads 2 --no-wpp --rc-lookahead 2 -o test.h265
+
+### 1.3.2 Mb-Level Parallelism
+
+MB-level parallelism is realized by means of build-in tool WPP. To enable mb-level parallelism with N threads you need disable frame multi-threading(by setting '--frame-threads 1'),
+enable wpp and set the number of threads(--threads N).
+
+./x265 --input a.yuv --input-res 3840x1744 --fps 24   --b-adapt 0  -b 0 --ref 1   --threads N --frame-threads 1  --wpp   --rc-lookahead 2 -o test1.h265
+
 # 2. Rate Control:Coding Thread
 
 x265 consists of two main threads:coding thread and look-ahead(preprocessing) thread,
