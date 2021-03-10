@@ -18,8 +18,16 @@ MB-tree 算法的目的是预测信息量，该信息量表示每个宏块对未
 
 x264 有个复杂的lookahead模块，该模块设计用来，在真正的编码模块分析之前，预测帧的编码消耗。它用这些预测信息来做很多的决定，比如自适应的B帧的位置、显示加权预测、以及缓冲区受阻的码率控制的比特分配。因为性能的原因，它的操作是对一半分辨率进行的，并且仅仅计算SATD残差，并不做量化和重建。
 
-lookahead的核心是`x264_slicetype_frame_cost`函数，它会被重复的调用来计算p0/p1/b的帧代价。p0是被分析帧的前向预测帧，p1是被分析帧的后向预测帧，b是被分析的帧。如果p1
-等于b，则分析的帧是P帧。如果p0等于b，则分析的帧是I帧。因为`x264_slicetype_frame_cost`可能会在算法中被重复调用很多次，每次调用的结果都要保存下来以备未来使用。
+lookahead的核心是`x264_slicetype_frame_cost`函数，它会被重复的调用来计算p0/p1/b的帧代价。p0是被分析帧的前向预测帧，p1是被分析帧的后向预测帧，b是被分析的帧。如果p1等于b，则分析的帧是P帧。如果p0等于b，则分析的帧是I帧。因为`x264_slicetype_frame_cost`可能会在算法中被重复调用很多次，每次调用的结果都要保存下来以备未来使用。
+
+`x264_slicetype_frame_cost`针对每个宏块调用`x264_slicetype_mb_cost`。因为帧只有一半的分辨率，每个宏块是`8x8`的，而不是`16x16`的。`x264_slicetype_mb_cost`对每个参考帧执行向量搜索。向量搜索是典型的六边形运动搜索。
+
+对于B帧，它还会检查一些可能的双向模式：一个模式类似于264的时间方向，零向量；一个模式使用运动矢量结果来自list0和list1运动搜索。`x264_slicetype_mb_cost`同样计算合适的帧内代价。所有的这些代价被保存下来，用于将来使用。这对于MB-tree非常重要，它需要这些信息用于计算。
+
+这些分析的结果主要用于Viterbi算法中自适应B帧的放置。Viterbi 算法的输出不仅仅在下一帧的类型判断时使用到，而且在后面N帧的类型判断中会用到，其中N是lookahead的大小。该计划实际上是一个队列：it changes over time as frames are pulled from one end and encoded using the specified frame types, frames are added to the other end as new frames enter the encoder, and the plan is recalculated. 该计划的存在对于宏块树非常重要：它意味着很多需要知道未来帧帧类型的算法，有个可信赖的精准预测。即使GOP的结构是变化的。
+
+结果，MB-tree知道未来N帧的帧类型，即近似的运动矢量和模式决策以及帧内/帧间模式代价。这样的计算成本接近于零，因为这些数据在做其他任务时，在编码器内部已经计算完了。即使这样，相对于总的编码时间，lookahead的计算消耗也是成本很低的。
+
 
 ## 5. MacroBlock-Tree Algorithm (MB-Tree 算法)
 
