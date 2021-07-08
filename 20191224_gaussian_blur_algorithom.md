@@ -1,5 +1,7 @@
 # [一个有效的使用了有限状态机(FSM)的高斯模糊算法](http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.177.3190&rep=rep1&type=pdf)
 
+[Unsharp Filter](https://homepages.inf.ed.ac.uk/rbf/HIPR2/unsharp.htm)
+
 ## 前言
 
 二维的高斯模糊算法被用到了很多的图像处理应用中，因为运算量巨大，高斯模糊会非常耗时，尤其是涉及大的核函数时，正确使用高斯模糊的两个属性可以降低运算时间:
